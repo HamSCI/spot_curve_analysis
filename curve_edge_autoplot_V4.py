@@ -34,7 +34,7 @@ import statsmodels.api as sm
 
 # set some defaults
 
-showPlots = False # set this to False to suppress showing of plots
+showPlots = True  # set this to False to suppress showing of plots
 showfinal = True
 FirstLine = True # to cause a header line to be included in the summary.csv file
 first_pass = True
@@ -44,11 +44,11 @@ conti = "NA"   # North America
 theBand = '20' # band in meters
 
 # point this to directory containing the input csv spot files
-inputDirectory = "E:\\multisource_data_NA_20m_T0_24hr\\*.csv"
+inputDirectory = ".//data_files//*.csv"
 
 # to save the generated plots, set this to True and set save directory
 savePlots = True
-saveDirectory = 'E:\\curve_comboplots'
+saveDirectory = './/curve_comboplots'
 
 saveSummary = False # if True, save summary file at end of processing
 typeList = 'T0'
@@ -272,8 +272,10 @@ enddate_ts   = datetime.timestamp(enddate_obj)
 # where the max gradient of the column appears
 
 for datafile in fileList:
-    f_dat = datafile.rsplit('\\') # extract the date from the file path
-    theDate = f_dat[2][6:16]
+    f_dat = datafile.rsplit('/') # extract the date from the file path
+#    print("datafile:",datafile)
+ #   print("f_dat=",f_dat)
+    theDate = f_dat[3][6:16]
     theDate_obj = datetime.strptime(theDate, '%Y-%m-%d').replace(tzinfo=timezone.utc)
     theDate_ts = datetime.timestamp(theDate_obj)
     if jobtype == '1': # are we processing a single date
