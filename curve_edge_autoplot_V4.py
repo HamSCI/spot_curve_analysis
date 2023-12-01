@@ -1,5 +1,6 @@
 # Curve edge autoplot
 # Authors:   W. Engelke, N. Callahan, University of Alabama
+# Enhancements from N. Frissell, University of Scranton
 # Dec. 2023
 # Reads in a csv file containing spot counts for a given band/day/continent
 # Outputs heat map of data, calculates/plots lower edge (Minimum Useful Range)
