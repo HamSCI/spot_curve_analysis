@@ -45,7 +45,7 @@ conti = "NA"   # North America
 theBand = '20' # band in meters
 
 
-inputDirecroty = ''  # Set this later, based on platform
+inputDirectory = ''  # Set this later, based on platform
 # to save the generated plots, set this to True and set save directory
 savePlots = True
 saveDirectory = ''
@@ -290,8 +290,15 @@ enddate_ts   = datetime.timestamp(enddate_obj)
 # where the max gradient of the column appears
 
 for datafile in fileList:
-    f_dat = datafile.rsplit('\\') # extract the date from the file path
-    theDate = f_dat[2][6:16]
+
+    if Windows_platform == True:
+    	f_dat = datafile.rsplit('\\') # extract the date from the file path
+    	theDate = f_dat[2][6:16]
+    else:
+        f_dat = datafile.rsplit('/')
+        theDate = f_dat[3][6:16]
+   # print("f_dat=",f_dat)
+    
     theDate_obj = datetime.strptime(theDate, '%Y-%m-%d').replace(tzinfo=timezone.utc)
     theDate_ts = datetime.timestamp(theDate_obj)
     if jobtype == '1': # are we processing a single date
