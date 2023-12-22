@@ -15,7 +15,7 @@ import pandas as pd
 
 from   scipy.interpolate import interp1d
 from   scipy.signal import filtfilt, butter, lfilter
-from   scipy import signal
+from   scipy import signal as ss
 
 from   PIL import Image, ImageColor, ImageFont, ImageDraw
 
@@ -44,23 +44,28 @@ Windows_platform = False
 conti = "NA"   # North America
 theBand = '20' # band in meters
 
+last_month = ''
+last_year = ''
 
 inputDirectory = ''  # Set this later, based on platform
+
 # to save the generated plots, set this to True and set save directory
 savePlots = True
 saveDirectory = ''
-
-saveSummary = False # if True, save summary file at end of processing
+FirstLine = True
+saveSummary = True # if True, save summary file at end of processing
 typeList = 'T0'
 
 
 # Matplotlib settings to make the plots look a little nicer.
-plt.rcParams['font.size']      = 12
+plt.rcParams['font.size']      = 10
 #plt.rcParams['font.weight']    = 'bold'
 plt.rcParams['axes.grid']      = True
 plt.rcParams['axes.xmargin']   = 0
 plt.rcParams['grid.linestyle'] = ':'
-#plt.rcParams['figure.figsize'] = (17,10)
+plt.rcParams['figure.figsize'] = (10,20)
+#plt.rcParams['figure.constrained_layout.use'] = True   # makes plot overlap colorbar
+plt.rcParams['axes.grid'] = False
 
 def gradient_edge(img):
     new_img = np.gradient(img, axis=1)
@@ -80,54 +85,39 @@ def moving_average(a, n=3):
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
 
+# calculation helpers
+# 
+def butter_smooth(input_signal):
+    # from Bill's notes:
+    # Produce smoothed curve using Butterworth filter
+    # f_break is # half-cycles in a minute; 
+    # a 60-min. period wave has (1/60) cycles/min, or
+    # (1/120) half-cycles per min. Sampling period is 1 min. 
+    # See doc.: scipy.signal.butter
+    f_break= 2*(1/120) # 2 times no. of half-cycles per sample period (1 min.)
+    f_order = 5
+    numer_poly, denom_poly = ss.butter(f_order, f_break, 
+                                       analog=False, btype='lowpass', fs=1.)
+    smoothed = ss.filtfilt(numer_poly, denom_poly, input_signal)     
+    return smoothed
 
+def lowess_smooth(input_signal, win=40):
+    x = np.arange(len(input_signal))
+    lowess = sm.nonparametric.lowess
+    smooth_edge = lowess(input_signal, x, frac=win/len(arr))[:,1]    
+    return smooth_edge
 
-################ Section for FFT ######################################################
-
-
-
-# FFT code goes here ###################
-
-
-
-
-
- 
-################## Section to write results of above analysis to summary csv file ###########    
-    plt.close()
-
-    return # temporary until the Sxx FFT data is working
-
-    if saveSummary == True:
-    
-        with open(outputDirectory  + 'summary.csv', 'a') as fd:
-          if FirstLine == True:
-              fd.write('Date,Minutes,Raw Max,Raw Sum,Noise Sum,rejected,No_LSTID,LSTID,\n')
-              FirstLine = False
-          fd.write(basename + ',' + str(data_length) + ',' + '{0:1.1f}'.format(Sxx_1.max())+','+'{0:1.1f}'.format(Sxx_1.sum()) + 
-                    ',' + noise_measure)
-          if rejected == True:
-              fd.write(',' + '{0:1.1f}'.format(Sxx_1.sum()))
-          if No_LSTID == True:
-              fd.write(',,' + '{0:1.1f}'.format(Sxx_1.sum()))
-          if LSTID == True:
-              fd.write(',,,' + '{0:1.1f}'.format(Sxx_1.sum()))
-          if current_month != last_month:
-            fd.write("," + last_year + "-" + last_month + "," + '{0:1.1f}'.format(Sxx_1_max_month_total)+','+'{0:1.1f}'.format(Sxx_1_int_month_total))
-            monthlyResults = [(last_year + "-" + last_month), ('{0:1.1f}'.format(Sxx_1_max_month_total)), ('{0:1.1f}'.format(Sxx_1_int_month_total))]
-            summaryResults.append(monthlyResults)
-
-            Sxx_1_max_month_total = Sxx_1.max()
-            Sxx_1_int_month_total = Sxx_1.sum()
-            last_month = current_month
-            last_year = current_year
-          else:
-            if LSTID == True:
-                Sxx_1_max_month_total = Sxx_1_max_month_total + Sxx_1.max()
-                Sxx_1_int_month_total = Sxx_1_int_month_total + Sxx_1.sum()
-          fd.write("\n")
-
-    plt.close('all')
+def rolling_mean(signal, win=35):
+    # using pandas for quick-n-clean, hacks available
+    # main goal with this impl. was to get the mean associated to center
+    tmp_df = pd.DataFrame(signal)
+    print("pd.DataFrame in rolling mean=",tmp_df)
+    means = tmp_df.rolling(win, center=True).mean().to_numpy()
+    print("means:",means)
+    hw = win//2
+    means[:hw] = 0.0
+    means[-hw:] = 0.0
+    return means
 
 
 def plot_raw(arr, title='', xlabel='Time (min)', ylabel='Height (km)', cblabel='',ax=None):
@@ -150,30 +140,43 @@ def plot_raw(arr, title='', xlabel='Time (min)', ylabel='Height (km)', cblabel='
         x_locs, x_texts = plt.xticks()
         plt.xticks(x_locs[::2], x_texts[::2])
         plt.xlim((720,1440))
-
-        plt.show()
+        if showPlots:
+            plt.show()
     else:
         
-        ax.set_title(title)
+        ax.set_title(title,size=10)
         ax.set_xlim((720,1440))
-        sns.heatmap(arr, cmap='jet', robust=True, cbar=True, ax=ax, cbar_kws={'label':cblabel})
+        sns.heatmap(arr, cmap='jet', robust=True, cbar=True, ax=ax, cbar_kws={'label': cblabel})
         ax.set_yticks(np.arange(0,400,100), labels=['300','200','100','0'])
         ax.set_ylabel("Range (10 km)")
         ax.set_xticks(np.arange(0,1441, 120), labels=['00:00','02:00','04:00','06:00','08:00','10:00','12:00' , \
-                                                '14:00','16:00','18:00','20:00','22:00','24:00' ], rotation=45)
+                                                '14:00','16:00','18:00','20:00','22:00','24:00' ], rotation=0)
         ax.set_xlabel('Time (UTC)')
         ax.vlines(x=[900,1320],color='magenta',ymin=0,ymax=300,linestyles='dashed',zorder=10)
     return
 
 
 def plot_images_on_date(img,theDate):
-    fig, ax = plt.subplots(figsize=(9,10))
-    ax1 = plt.subplot(3,1,1)
-    ax2 = plt.subplot(3,1,2)
-    ax3 = plt.subplot(3,1,3)
+    global FirstLine, last_month, last_year, Sxx_1_max_month_total, Sxx_1_int_month_total
+ # 
+    fig = plt.figure()
+    #                 (nrows, ncols),(loc (row, col))
+    ax1 = plt.subplot2grid((4, 36), (0, 0), colspan=36)
+    ax2 = plt.subplot2grid((4, 36), (1, 0), colspan=36)
+    ax3 = plt.subplot2grid((4, 36), (2, 7), colspan=17)
+    ax4 = plt.subplot2grid((4, 36), (3, 7), colspan=21)
+    
     plot_raw(img, title='Initial Data - ' + theDate,ax=ax1,cblabel='spots in minute') # FIRST PLOT, raw data
     new_img = np.gradient(img, axis=1)
     ax1.set_xlim((720,1440))
+
+# the following code does nothing
+    pos1 = ax3.get_position() # try to make 3rd plot less wide
+    print("pos1:",pos1)
+    l, b, w, h = ax3.get_position().bounds
+    print(l,b,w,h)
+    ax3.set_position([l,b,0.7*w,h])  # nah.
+    
 
     move_img = bn.move_mean(new_img, 35, axis=1)
     move_img = np.nan_to_num(move_img, nan=0.0)
@@ -181,13 +184,12 @@ def plot_images_on_date(img,theDate):
     # SECOND PLOT, gradient
     plot_raw(move_img, title='Columnwise Gradient Moving Average (.5km)',ax=ax2,cblabel='spots gradient')
     ax2.set_xlim((720,1440))
-    plt.tight_layout()
-   # plt.show()
+    
     assert np.isfinite(move_img.ravel()).all()
 
     noisy_arr = np.argmax(move_img, axis=1)
     ax3.scatter(np.arange(0, noisy_arr.shape[0], 1), noisy_arr, label='Gradient Points')
-
+    
     # THIRD PLOT, scatter plot of derived edge & filtered line
 
     if use_Butterworth == False:
@@ -207,7 +209,7 @@ def plot_images_on_date(img,theDate):
         b, a = butter(FILTERORDER, FILTERBREAK, analog=False, btype='lowpass', fs=1.)
         smooth_arr = filtfilt(b, a, noisy_arr) # plotedge is the filtered signal     
         ax3.plot(smooth_arr, color='red', label='Smoothed')
-        ax3.set_title('Argmax Averaged, Butterworth filter')
+        ax3.set_title('Argmax Averaged, Butterworth filter',size=10)
        
     ax3.set_ylabel('Range (10 km)')
     ax3.set_xlabel('Time (minutes)')
@@ -215,26 +217,108 @@ def plot_images_on_date(img,theDate):
     ax3.set_ylim([0,300])
     ax3.set_xlim((900,1320))
     ax3.set_xticks(np.arange(900,1321, 60), labels=['15:00','16:00', \
-                                '17:00','18:00','19:00','20:00','21:00','22:00' ], rotation=45)
+                                '17:00','18:00','19:00','20:00','21:00','22:00' ], rotation=0)
     ax3.vlines(x=[901,1320],color='magenta',ymin=0,ymax=300,linestyles='dashed',lw=4, zorder=10)
     ax3.legend()
     outputFilename = theDate + "_" + conti + "_" + theBand + "m.png"
     outputCurve = theDate + "_" + conti + "_" + theBand + "m.csv"
+  
+
+    # FFT
+    fs = 1./60.   # sampling frequency in Hz (one sample per minute)
+
+    smooth_arr_1 = smooth_arr[900:1319] # work only with the focus area, 900 to 1320 minutes
+    print("smooth_arr len as cropped:",len(smooth_arr_1))
+    f, t, Sxx = ss.spectrogram(smooth_arr_1, fs, nperseg = 200,noverlap=180)
+    print("Sxx size:",len(Sxx), len(Sxx[0]))
+    print("f size:",len(f))
+    print("len t:",len(t), "t=",t)
+    Sxx_1 = Sxx[0:32, 0:128]
+    noise_measure = np.std(Sxx_1)
+
+#  pcolormesh parameters:
+#  X, Y,  C     --- X is columns & Y is rows;  C is in (rows,cols) (!)
+
+# nearest, auto , gouraud
+
+    # discard all the higher frequencies, no info there (was filtered out)
+   # ax4.vlines(x=[5400,18000],color='magenta',ymin=0,ymax=300,linestyles='dashed',lw=4, zorder=10)
+        
+    mpbl = ax4.pcolormesh(t, f[0:14], Sxx[0:14], shading='auto') # auto
+
+#plt.pcolormesh(t, f, Sxx, shading='gouraud')
+
+    ax4.set_xlabel("Seconds")
+    ax4.set_ylabel('Frequency [Hz]')
+
+    ax4.set_title("Power Spectral Density",size=10)
+    
+    ax4.set_xticks(np.arange(6000,18000, 1714), labels=['15:00','16:00', \
+                                '17:00','18:00','19:00','20:00','21:00','22:00'], rotation=0)
+
+    cbar = plt.colorbar(mpbl,label='Power Spectral Density [dB]',ax=ax4)
+    
+    # do this manually, as tight_layout can't handle it
+    plt.subplots_adjust(top = 0.95, bottom = 0.2, hspace=0.5)
+
     if savePlots:
         outfile = os.path.join(saveDirectory, outputFilename)
         outputCurveData = os.path.join(saveDirectory, outputCurve)
         plt.savefig(outfile)
         print("Saved plot", outputFilename)
-        print("Saved curve data:",outputCurveData)
+      #  print("Saved curve data:",outputCurveData)
         print("smooth_arr len:",len(smooth_arr))
-        print("smooth arr",smooth_arr[840:1320])
-     #   print("HALT")
-     #   z=input()
-        with open(outputCurveData, 'w',newline='') as csvfile:
-            mywriter = csv.writer(csvfile, delimiter=',')
-            mywriter.writerow(smooth_arr[840:1320])
+     #   print("smooth arr",smooth_arr[840:1320])
+
+       # with open(outputCurveData, 'w',newline='') as csvfile:
+       #     mywriter = csv.writer(csvfile, delimiter=',')
+       #     mywriter.writerow(smooth_arr[840:1320])
     if showPlots:
         plt.show()
+
+
+################## Section to write results of above analysis to summary csv file ###########    
+
+    if saveSummary == True:
+        current_month = theDate[5:7]
+        current_year = theDate[0:4]
+        print("current month:",current_month)
+        with open(saveDirectory  + '\\summary.csv', 'a') as fd:
+          if FirstLine == True:
+              fd.write('Date,Raw Max,Raw Sum,Noise Sum,rejected,No_LSTID,LSTID,\n')
+              last_month = current_month
+              last_year = theDate[0:4]
+              FirstLine = False
+              Sxx_1_max_month_total = 0
+              Sxx_1_int_month_total = 0
+          print("write summary line for ",theDate, "to dir:",saveDirectory)
+          fd.write(theDate + ','  + '{0:1.1f}'.format(Sxx_1.max())+','+'{0:1.1f}'.format(Sxx_1.sum()) + 
+                    ',' + '{0:1.1f}'.format(noise_measure))
+       #   if rejected == True:
+       #       fd.write(',' + '{0:1.1f}'.format(Sxx_1.sum()))
+       #   if No_LSTID == True:
+       #       fd.write(',,' + '{0:1.1f}'.format(Sxx_1.sum()))
+       #   if LSTID == True:
+       #       fd.write(',,,' + '{0:1.1f}'.format(Sxx_1.sum()))
+          if current_month != last_month:
+            fd.write("," + last_year + "-" + last_month + "," + '{0:1.1f}'.format(Sxx_1_max_month_total)+','+'{0:1.1f}'.format(Sxx_1_int_month_total))
+            monthlyResults = [(last_year + "-" + last_month), ('{0:1.1f}'.format(Sxx_1_max_month_total)), ('{0:1.1f}'.format(Sxx_1_int_month_total))]
+         #   summaryResults.append(monthlyResults)
+
+            Sxx_1_max_month_total = Sxx_1.max()
+            Sxx_1_int_month_total = Sxx_1.sum()
+            last_month = current_month
+            last_year = current_year
+       #   else:
+        #    if LSTID == True:
+        #        Sxx_1_max_month_total = Sxx_1_max_month_total + Sxx_1.max()
+        #        Sxx_1_int_month_total = Sxx_1_int_month_total + Sxx_1.sum()
+          else:
+             Sxx_1_max_month_total = Sxx_1_max_month_total + Sxx_1.max()
+             Sxx_1_int_month_total = Sxx_1_int_month_total + Sxx_1.sum()
+              
+          fd.write("\n")
+          fd.close()
 
     plt.close('all')
 
@@ -253,12 +337,12 @@ arr = spotcount  # to accommodate the lowess implementation
 startdate = ''
 enddate = ''
 
-if 'win' in sys.platform:
+if 'win' in sys.platform: # Adjust escape chars so runs on Win or Linux platform
     Windows_platform = True
     print("Detected Windows platform")
     # point this to directory containing the input csv spot files
     inputDirectory = "E:\\multisource_data_NA_20m_T0_24hr\\*.csv"
-    saveDirectory = 'E:\\curve_comboplots'
+    saveDirectory = 'E:\\curve_comboplots2'
 else:
     Windows_platform = False
     print("Defaulting to Linux platform")
@@ -268,8 +352,8 @@ else:
 fileList = glob.glob(inputDirectory)
 
 print("Show plots? (y, N)")
-showplots = input()
-if showplots == '' or showplots == 'N' or showplots == 'n':
+qshowplots = input()
+if qshowplots == '' or qshowplots == 'N' or qshowplots == 'n':
     showPlots = False
 else:
     showPlots = True
@@ -323,23 +407,20 @@ for datafile in fileList:
     print("Processing ",theDate)
 
 
-    with open(datafile,newline='') as csvfile:
-        reader = csv.reader(csvfile,delimiter=",")
-        x_counter = 0
-       # maxcount = 0
-        for row in reader:
-            np_row = np.array(list(row),dtype=np.uint32)
-            spotcount[x_counter] = np_row
-            x_counter += 1
-        maxcount = np.max(spotcount)
+    df =  pd.read_csv(datafile, dtype=np.uint32, header=None).T
+    arr = np.loadtxt(datafile, dtype=np.uint32, delimiter=',').T
 
-        plot_images_on_date(spotcount,theDate)
+    spotcount = np.transpose(df).to_numpy()
+ #   print("transposed df:",spotcount)
+
+    plot_images_on_date(spotcount,theDate)
+
 
 
 
 print("end of processing")
 if saveSummary:
-    with open(outputDirectory  + 'summary.csv', 'a') as fd:
+    with open(saveDirectory  + '\\summary.csv', 'a') as fd:
       fd.write("\n")
       for month in summaryResults:
         for value in month:
