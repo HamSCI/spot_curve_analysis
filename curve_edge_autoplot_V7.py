@@ -156,9 +156,13 @@ def plot_raw(arr, title='', xlabel='Time (min)', ylabel='Height (km)', cblabel='
         ax.vlines(x=[900,1320],color='magenta',ymin=0,ymax=300,linestyles='dashed',zorder=10)
     return
 
+def output_sums(fd):
+    global FirstLine, last_month, last_year, Sxx_1_max_month_total, Sxx_1_int_month_total
+    fd.write("," + last_year + "-" + last_month + "," + '{0:1.1f}'.format(Sxx_1_max_month_total)+','+'{0:1.1f}'.format(Sxx_1_int_month_total))
 
 def plot_images_on_date(img,theDate):
     global FirstLine, last_month, last_year, Sxx_1_max_month_total, Sxx_1_int_month_total
+    
  # 
     fig = plt.figure()
     #                 (nrows, ncols),(loc (row, col))
@@ -183,7 +187,7 @@ def plot_images_on_date(img,theDate):
     move_img = np.nan_to_num(move_img, nan=0.0)
 
     # SECOND PLOT, gradient
-    plot_raw(move_img, title='Columnwise Gradient Moving Average (.5km)',ax=ax2,cblabel='spots gradient')
+    plot_raw(move_img, title='Columnwise Gradient Moving Average (.5km) -'+ theDate,ax=ax2,cblabel='spots gradient')
     ax2.set_xlim((720,1440))
     
     assert np.isfinite(move_img.ravel()).all()
@@ -210,7 +214,9 @@ def plot_images_on_date(img,theDate):
         b, a = butter(FILTERORDER, FILTERBREAK, analog=False, btype='lowpass', fs=1.)
         smooth_arr = filtfilt(b, a, noisy_arr) # plotedge is the filtered signal     
         ax3.plot(smooth_arr, color='red', label='Smoothed')
-        ax3.set_title('Argmax Averaged, Butterworth filter',size=10)
+        ax3.set_title('Argmax Averaged, Butterworth filter -'+ theDate,size=10)
+        ax1.plot(300-smooth_arr, color='red', label='Smoothed') # put this on axis #1 
+        ax2.plot(300-smooth_arr, color='red', label='Smoothed') # put this on axis #2
        
     ax3.set_ylabel('Range (10 km)')
     ax3.set_xlabel('Time (minutes)')
@@ -229,13 +235,13 @@ def plot_images_on_date(img,theDate):
     fs = 1./60.   # sampling frequency in Hz (one sample per minute)
 
     smooth_arr_1 = smooth_arr[900:1319] # work only with the focus area, 900 to 1320 minutes
-    print("smooth_arr len as cropped:",len(smooth_arr_1))
+
     f, t, Sxx = ss.spectrogram(smooth_arr_1, fs, nperseg = 200,noverlap=180)
-    print("Sxx size:",len(Sxx), len(Sxx[0]))
-    print("f size:",len(f))
-    print("len t:",len(t), "t=",t)
+
     Sxx_1 = Sxx[0:32, 0:128]
     noise_measure = np.std(Sxx_1)
+    Sxx_max = np.max(Sxx_1)
+    Sxx_tot = np.sum(Sxx_1)
 
 #  pcolormesh parameters:
 #  X, Y,  C     --- X is columns & Y is rows;  C is in (rows,cols) (!)
@@ -247,12 +253,13 @@ def plot_images_on_date(img,theDate):
         
     mpbl = ax4.pcolormesh(t, f[0:14], Sxx[0:14], shading='auto') # auto
 
-#plt.pcolormesh(t, f, Sxx, shading='gouraud')
+    #plt.pcolormesh(t, f, Sxx, shading='gouraud')
 
     ax4.set_xlabel("Seconds")
     ax4.set_ylabel('Frequency [Hz]')
 
-    ax4.set_title("Power Spectral Density",size=10)
+    ax4.set_title("Power Spectral Density - " + theDate +"\n Max="+ '{0:1,.0f}'.format(Sxx_max) + " Tot. Power="   \
+                  + '{0:1,.0f}'.format(Sxx_tot) + " Noise=" + '{0:1,.0f}'.format(noise_measure),size=8)
     
     ax4.set_xticks(np.arange(6000,18000, 1714), labels=['15:00','16:00', \
                                 '17:00','18:00','19:00','20:00','21:00','22:00'], rotation=0)
@@ -260,7 +267,7 @@ def plot_images_on_date(img,theDate):
     cbar = plt.colorbar(mpbl,label='Power Spectral Density [dB]',ax=ax4)
     
     # do this manually, as tight_layout can't handle it
-    plt.subplots_adjust(top = 0.95, bottom = 0.2, hspace=0.5)
+    plt.subplots_adjust(top = 0.95, bottom = 0.2, hspace=0.6)
 
     if savePlots:
         outfile = os.path.join(saveDirectory, outputFilename)
@@ -302,8 +309,9 @@ def plot_images_on_date(img,theDate):
        #   if LSTID == True:
        #       fd.write(',,,' + '{0:1.1f}'.format(Sxx_1.sum()))
           if current_month != last_month:
-            print("Write Monthly Summary",(last_year + "-" + last_month))
-            fd.write("," + last_year + "-" + last_month + "," + '{0:1.1f}'.format(Sxx_1_max_month_total)+','+'{0:1.1f}'.format(Sxx_1_int_month_total))
+          #  print("Write Monthly Summary",(last_year + "-" + last_month))
+         #   fd.write("," + last_year + "-" + last_month + "," + '{0:1.1f}'.format(Sxx_1_max_month_total)+','+'{0:1.1f}'.format(Sxx_1_int_month_total))
+          #  output_sums(fd)
             monthlyResults = [(last_year + "-" + last_month), ('{0:1.1f}'.format(Sxx_1_max_month_total)), ('{0:1.1f}'.format(Sxx_1_int_month_total))]
             summaryResults.append([last_year , last_month, '{0:1.1f}'.format(Sxx_1_max_month_total), '{0:1.1f}'.format(Sxx_1_int_month_total)])
 
@@ -422,8 +430,10 @@ for datafile in fileList:
 
 print("end of processing")
 if saveSummary:
+    summaryResults.append([last_year , last_month, '{0:1.1f}'.format(Sxx_1_max_month_total), '{0:1.1f}'.format(Sxx_1_int_month_total)])
     with open(saveDirectory  + '\\summary.csv', 'a') as fd:
-      fd.write("\n")
+     # output_sums(fd)
+      fd.write("\n\n")
       for month in summaryResults:
         for value in month:
             fd.write(value + ",")
